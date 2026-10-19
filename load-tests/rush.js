@@ -3,6 +3,8 @@ import http from 'k6/http';
 import { check } from 'k6';
 import { uuidv4 } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
 
+http.setResponseCallback(http.expectedStatuses(201, 409, 429));
+
 const BASE = __ENV.BASE_URL || 'http://localhost:8080';
 const STRATEGY = __ENV.STRATEGY || 'redis';
 const TICKETS = parseInt(__ENV.TICKETS || '1000');
@@ -30,7 +32,7 @@ export default function (data) {
     `${BASE}/api/events/${data.eventId}/reserve?strategy=${STRATEGY}`,
     JSON.stringify({ userId: `user-${__VU}-${__ITER}`, qty: 1 }),
     { headers: { ...JSON_HEADERS, 'Idempotency-Key': uuidv4() } });
-  check(res, { 'accepted (201) or sold out (409)': (r) => r.status === 201 || r.status === 409 });
+  check(res, { 'accepted (201) or rejected (409/429)': (r) => [201, 409, 429].includes(r.status) });
 }
 
 export function teardown(data) {

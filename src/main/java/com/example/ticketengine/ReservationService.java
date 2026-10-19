@@ -20,6 +20,7 @@ public class ReservationService {
 
     private static final int USER_LIMIT = 4;
     private static final int MAX_OPTIMISTIC_ATTEMPTS = 100;
+    private static final int IDEMPOTENCY_TTL_SECONDS = 600;
 
     private final InventoryRepository repo;
     private final StringRedisTemplate redis;
@@ -35,6 +36,7 @@ public class ReservationService {
 
     private static String stockKey(long eventId) { return "stock:" + eventId; }
     private static String userKey(long eventId, String userId) { return "user:" + eventId + ":" + userId; }
+    private static String idemKey(long eventId, String key) { return "idem:" + eventId + ":" + key; }
 
     public long createEvent(String name, int total) {
         long id = repo.createEvent(name, total);
@@ -43,9 +45,12 @@ public class ReservationService {
     }
 
     public Reservation reserve(long eventId, String userId, int qty, String key, Strategy strategy) {
-        // Idempotency: a retried request returns the original reservation.
-        var existing = repo.findByKey(key);
-        if (existing.isPresent()) return existing.get();
+        // The database strategies dedupe with a DB lookup. The Redis strategy dedupes inside the
+        // Lua script, so rejected requests never touch Postgres at all.
+        if (strategy != Strategy.REDIS) {
+            var existing = repo.findByKey(key);
+            if (existing.isPresent()) return existing.get();
+        }
 
         try {
             return switch (strategy) {
@@ -55,7 +60,7 @@ public class ReservationService {
                 case REDIS -> redisGated(eventId, userId, qty, key);
             };
         } catch (DuplicateKeyException dup) {
-            // Two concurrent requests with the same idempotency key: the loser returns the winner's row.
+            // UNIQUE(idempotency_key) is the final guard: the loser returns the winner's row.
             return repo.findByKey(key).orElseThrow();
         }
     }
@@ -95,16 +100,24 @@ public class ReservationService {
     }
 
     /**
-     * Redis Lua script rejects excess traffic atomically and cheaply. Only winners touch Postgres,
-     * and the DB conditional update + CHECK constraint remain as the final guard.
-     * (Phase 4 moves the Postgres write behind Kafka.)
+     * One atomic Lua call decides: duplicate? sold out? over the user limit? If all clear it also
+     * decrements stock and records the idempotency key. Only winners touch Postgres, where a
+     * conditional update and the CHECK constraint remain as the final guard.
      */
     private Reservation redisGated(long eventId, String userId, int qty, String key) {
+        String idem = idemKey(eventId, key);
         Long result = redis.execute(reserveScript,
-                List.of(stockKey(eventId), userKey(eventId, userId)),
-                String.valueOf(qty), String.valueOf(USER_LIMIT));
+                List.of(stockKey(eventId), userKey(eventId, userId), idem),
+                String.valueOf(qty), String.valueOf(USER_LIMIT), String.valueOf(IDEMPOTENCY_TTL_SECONDS));
+
         if (result == null || result == -1) throw new SoldOutException();
         if (result == -2) throw new LimitExceededException();
+        if (result == -3) {
+            // A retry of a request we already accepted: return the original reservation,
+            // or tell the client the first attempt is still being written.
+            return repo.findByKey(key).orElseThrow(() ->
+                    new ResponseStatusException(HttpStatus.CONFLICT, "Duplicate request still in progress"));
+        }
 
         try {
             return tx.execute(status -> {
@@ -112,9 +125,10 @@ public class ReservationService {
                 return repo.insert(eventId, userId, qty, key);
             });
         } catch (RuntimeException e) {
-            // Compensate: give the stock back so Redis does not leak tickets.
+            // Compensate: give the stock back and free the idempotency key so a retry can succeed.
             redis.opsForValue().increment(stockKey(eventId), qty);
             redis.opsForValue().decrement(userKey(eventId, userId), qty);
+            redis.delete(idem);
             throw e;
         }
     }
@@ -137,7 +151,9 @@ public class ReservationService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Event not found"));
         repo.reset(eventId);
         redis.opsForValue().set(stockKey(eventId), String.valueOf(total));
-        Set<String> userKeys = redis.keys("user:" + eventId + ":*");
-        if (userKeys != null && !userKeys.isEmpty()) redis.delete(userKeys);
+        for (String pattern : List.of("user:" + eventId + ":*", "idem:" + eventId + ":*")) {
+            Set<String> keys = redis.keys(pattern);
+            if (keys != null && !keys.isEmpty()) redis.delete(keys);
+        }
     }
 }
