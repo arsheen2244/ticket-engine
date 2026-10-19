@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flash-Sale Ticket Engine</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#14171c;--muted:#5d6673;--line:#dde1e7;--accent:#2f6fed;--ok:#1a8f4c;--bad:#d03a3a}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1216;--card:#181c22;--text:#e8ebf0;--muted:#98a2b0;--line:#2a313b;--accent:#6b9bff;--ok:#4cc27f;--bad:#ff6b6b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif}
+header{padding:20px 24px;border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:20px}header p{margin:2px 0 0;color:var(--muted);font-size:13px}
+main{max-width:1000px;margin:0 auto;padding:20px;display:grid;gap:16px;grid-template-columns:1fr 1fr}
+@media(max-width:760px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
+.card h2{margin:0 0 12px;font-size:15px}
+.full{grid-column:1/-1}
+label{display:block;font-size:12px;color:var(--muted);margin:8px 0 3px}
+input,select,button{font:inherit;padding:8px 10px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--text);width:100%}
+button{background:var(--accent);color:#fff;border:0;cursor:pointer;margin-top:10px;font-weight:600}
+button.sec{background:transparent;color:var(--text);border:1px solid var(--line)}
+button:disabled{opacity:.5;cursor:wait}
+.row{display:flex;gap:8px}.row>*{flex:1}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:12px}
+.stat{border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.stat span{display:block;font-size:11px;color:var(--muted)}.stat b{font-size:20px}
+.bar{height:10px;background:var(--line);border-radius:6px;overflow:hidden;margin-top:12px}
+.bar i{display:block;height:100%;width:0;background:var(--ok);transition:width .3s}
+.badge{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:700;background:var(--ok);color:#fff}
+.badge.bad{background:var(--bad)}
+pre{margin:0;max-height:240px;overflow:auto;font:12px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap}
+.hint{font-size:12px;color:var(--muted);margin-top:8px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Flash-Sale Ticket Engine</h1>
+  <p>Compare reservation strategies under load. Watch for the OVERSOLD badge.</p>
+</header>
+<main>
+  <section class="card">
+    <h2>1. Event</h2>
+    <label>Name</label><input id="name" value="Concert">
+    <label>Total tickets</label><input id="total" type="number" min="1" value="1000">
+    <button id="create">Create event</button>
+    <div class="row" style="margin-top:12px">
+      <input id="eventId" placeholder="Event id" style="flex:2">
+      <button class="sec" id="use" style="margin-top:0">Use</button>
+    </div>
+    <div class="stats">
+      <div class="stat"><span>Total tickets</span><b id="sTotal">-</b></div>
+      <div class="stat"><span>Reserved (Postgres)</span><b id="sReserved">-</b></div>
+      <div class="stat"><span>DB available</span><b id="sDb">-</b></div>
+      <div class="stat"><span>Redis stock</span><b id="sRedis">-</b></div>
+    </div>
+    <div class="bar"><i id="bar"></i></div>
+    <p style="margin:10px 0 0">Status: <span class="badge" id="badge">-</span></p>
+    <button class="sec" id="reset">Reset stock and reservations</button>
+  </section>
+
+  <section class="card">
+    <h2>2. Reserve manually</h2>
+    <label>Strategy</label>
+    <select id="strategy">
+      <option value="redis">redis (Lua gate)</option>
+      <option value="pessimistic">pessimistic (row lock)</option>
+      <option value="optimistic">optimistic (version check)</option>
+      <option value="naive">naive (oversells)</option>
+    </select>
+    <div class="row">
+      <div><label>User id</label><input id="user" value="alice"></div>
+      <div><label>Quantity</label><input id="qty" type="number" min="1" value="1"></div>
+    </div>
+    <label>Idempotency key (same key = same reservation)</label>
+    <input id="key" placeholder="leave empty for a new key each click">
+    <button id="reserve">Reserve</button>
+  </section>
+
+  <section class="card full">
+    <h2>3. Simulate a rush from your browser</h2>
+    <div class="row">
+      <div><label>Strategy</label>
+        <select id="rushStrategy">
+          <option value="naive">naive</option>
+          <option value="pessimistic">pessimistic</option>
+          <option value="optimistic">optimistic</option>
+          <option value="redis" selected>redis</option>
+        </select></div>
+      <div><label>Concurrent requests</label><input id="rushN" type="number" min="1" max="5000" value="500"></div>
+    </div>
+    <button id="rush">Fire rush (resets event first)</button>
+    <p class="hint">Browsers cap parallel connections, so use k6 for real benchmark numbers. This is for demos.</p>
+  </section>
+
+  <section class="card full"><h2>Log</h2><pre id="log"></pre></section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let eventId = localStorage.getItem('eventId') || '';
+const JSON_H = {'Content-Type': 'application/json'};
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'k-' + Math.random().toString(36).slice(2) + Date.now());
+
+function log(msg) {
+  const el = $('log');
+  el.textContent = new Date().toLocaleTimeString() + '  ' + msg + '\n' + el.textContent;
+}
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  let body = null;
+  try { body = await r.json(); } catch (e) {}
+  return { status: r.status, body };
+}
+function setEvent(id) {
+  eventId = String(id);
+  localStorage.setItem('eventId', eventId);
+  $('eventId').value = eventId;
+  refresh();
+}
+function render(s) {
+  $('sTotal').textContent = s.total_tickets;
+  $('sReserved').textContent = s.tickets_reserved;
+  $('sDb').textContent = s.db_available;
+  $('sRedis').textContent = s.redis_stock == null ? '-' : s.redis_stock;
+  const bar = $('bar');
+  bar.style.width = Math.min(100, (s.tickets_reserved / s.total_tickets) * 100) + '%';
+  bar.style.background = s.oversold ? 'var(--bad)' : 'var(--ok)';
+  const b = $('badge');
+  b.textContent = s.oversold ? 'OVERSOLD' : 'OK';
+  b.className = 'badge' + (s.oversold ? ' bad' : '');
+}
+async function refresh() {
+  if (!eventId) return;
+  try {
+    const { status, body } = await api(`/api/events/${eventId}/stats`);
+    if (status === 200) render(body);
+  } catch (e) {}
+}
+setInterval(refresh, 1000);
+$('eventId').value = eventId;
+refresh();
+
+$('create').onclick = async () => {
+  const { status, body } = await api('/api/events', {
+    method: 'POST', headers: JSON_H,
+    body: JSON.stringify({ name: $('name').value, totalTickets: parseInt($('total').value) })
+  });
+  if (status === 200) { setEvent(body.id); log(`Created event ${body.id}`); }
+  else log(`Create failed (${status})`);
+};
+$('use').onclick = () => { if ($('eventId').value) setEvent($('eventId').value); };
+$('reset').onclick = async () => {
+  if (!eventId) return log('Pick an event first');
+  await api(`/api/events/${eventId}/reset`, { method: 'POST' });
+  log(`Reset event ${eventId}`); refresh();
+};
+$('reserve').onclick = async () => {
+  if (!eventId) return log('Create or pick an event first');
+  const key = $('key').value.trim() || uuid();
+  const { status, body } = await api(`/api/events/${eventId}/reserve?strategy=${$('strategy').value}`, {
+    method: 'POST',
+    headers: { ...JSON_H, 'Idempotency-Key': key },
+    body: JSON.stringify({ userId: $('user').value, qty: parseInt($('qty').value) })
+  });
+  const meaning = { 201: 'reserved', 409: 'sold out', 429: 'per-user limit reached' }[status] || 'error';
+  log(`${status} ${meaning}` + (body && body.id ? ` | reservation ${body.id} | key ${key}` : ''));
+  refresh();
+};
+$('rush').onclick = async () => {
+  if (!eventId) return log('Create or pick an event first');
+  const n = parseInt($('rushN').value), strat = $('rushStrategy').value;
+  const btn = $('rush'); btn.disabled = true;
+  await api(`/api/events/${eventId}/reset`, { method: 'POST' });
+  const counts = {}, t0 = performance.now(), stamp = Date.now();
+  log(`Rush started: ${n} requests, strategy=${strat}`);
+  await Promise.all(Array.from({ length: n }, (_, i) =>
+    fetch(`/api/events/${eventId}/reserve?strategy=${strat}`, {
+      method: 'POST',
+      headers: { ...JSON_H, 'Idempotency-Key': uuid() },
+      body: JSON.stringify({ userId: `rush-${stamp}-${i}`, qty: 1 })
+    }).then(r => { counts[r.status] = (counts[r.status] || 0) + 1; })
+      .catch(() => { counts.error = (counts.error || 0) + 1; })));
+  const secs = ((performance.now() - t0) / 1000).toFixed(2);
+  const { body } = await api(`/api/events/${eventId}/stats`);
+  log(`Rush done in ${secs}s | responses ${JSON.stringify(counts)} | reserved ${body.tickets_reserved}/${body.total_tickets} | oversold=${body.oversold}`);
+  btn.disabled = false; refresh();
+};
+</script>
+</body>
+</html>

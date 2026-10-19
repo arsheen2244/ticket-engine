@@ -1,0 +1,17 @@
+server:
+  port: ${PORT:8080}
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/tickets}
+    username: ${DB_USER:tickets}
+    password: ${DB_PASSWORD:tickets}
+    hikari:
+      maximum-pool-size: ${DB_POOL:30}
+  data:
+    redis:
+      url: ${REDIS_URL:redis://localhost:6379}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
