@@ -64,6 +64,7 @@ pre{margin:0;max-height:240px;overflow:auto;font:12px/1.5 ui-monospace,Consolas,
     <label>Strategy</label>
     <select id="strategy">
       <option value="redis">redis (Lua gate)</option>
+      <option value="redis_async">redis + Kafka (async, needs TICKET_ASYNC=true)</option>
       <option value="pessimistic">pessimistic (row lock)</option>
       <option value="optimistic">optimistic (version check)</option>
       <option value="naive">naive (oversells)</option>
@@ -75,6 +76,7 @@ pre{margin:0;max-height:240px;overflow:auto;font:12px/1.5 ui-monospace,Consolas,
     <label>Idempotency key (same key = same reservation)</label>
     <input id="key" placeholder="leave empty for a new key each click">
     <button id="reserve">Reserve</button>
+    <button class="sec" id="pay">Pay last reservation (mock payment)</button>
   </section>
 
   <section class="card full">
@@ -86,6 +88,7 @@ pre{margin:0;max-height:240px;overflow:auto;font:12px/1.5 ui-monospace,Consolas,
           <option value="pessimistic">pessimistic</option>
           <option value="optimistic">optimistic</option>
           <option value="redis" selected>redis</option>
+          <option value="redis_async">redis_async</option>
         </select></div>
       <div><label>Concurrent requests</label><input id="rushN" type="number" min="1" max="5000" value="500"></div>
     </div>
@@ -98,6 +101,7 @@ pre{margin:0;max-height:240px;overflow:auto;font:12px/1.5 ui-monospace,Consolas,
 <script>
 const $ = id => document.getElementById(id);
 let eventId = localStorage.getItem('eventId') || '';
+let lastReservationId = null;
 const JSON_H = {'Content-Type': 'application/json'};
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'k-' + Math.random().toString(36).slice(2) + Date.now());
 
@@ -162,9 +166,22 @@ $('reserve').onclick = async () => {
     headers: { ...JSON_H, 'Idempotency-Key': key },
     body: JSON.stringify({ userId: $('user').value, qty: parseInt($('qty').value) })
   });
-  const meaning = { 201: 'reserved', 409: 'sold out', 429: 'per-user limit reached' }[status] || 'error';
+  const meaning = { 201: 'reserved', 202: 'queued (async)', 409: 'sold out', 429: 'per-user limit reached', 501: 'async mode is off' }[status] || 'error';
   log(`${status} ${meaning}` + (body && body.id ? ` | reservation ${body.id} | key ${key}` : ''));
+  if (body && body.id) lastReservationId = body.id;
+  if (status === 202) {
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      const poll = await api(`/api/reservations/by-key/${key}`);
+      if (poll.status === 200) { lastReservationId = poll.body.id; log(`stored by consumer | reservation ${poll.body.id}`); break; }
+    }
+  }
   refresh();
+};
+$('pay').onclick = async () => {
+  if (!lastReservationId) return log('Make a reservation first');
+  const { status, body } = await api(`/api/reservations/${lastReservationId}/pay`, { method: 'POST' });
+  log(status === 200 ? `payment ok: ${body.status}` : `payment failed (${status}): ${body && body.error}`);
 };
 $('rush').onclick = async () => {
   if (!eventId) return log('Create or pick an event first');

@@ -10,6 +10,19 @@ spring:
   data:
     redis:
       url: ${REDIS_URL:redis://localhost:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
+    consumer:
+      auto-offset-reset: earliest
+      group-id: ticket-engine
+ticket:
+  # false = the app behaves exactly as before and needs no Kafka.
+  # true  = enables the redis_async strategy, consumer, outbox publisher and notification listener.
+  async: ${TICKET_ASYNC:false}
 management:
   endpoints:
     web:

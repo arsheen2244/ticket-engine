@@ -1,3 +1,3 @@
 package com.example.ticketengine;
 
-public enum Strategy { NAIVE, PESSIMISTIC, OPTIMISTIC, REDIS }
+public enum Strategy { NAIVE, PESSIMISTIC, OPTIMISTIC, REDIS, REDIS_ASYNC }

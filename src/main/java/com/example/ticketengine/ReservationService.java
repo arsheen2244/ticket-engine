@@ -1,5 +1,6 @@
 package com.example.ticketengine;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -18,6 +19,9 @@ import java.util.concurrent.ThreadLocalRandom;
 @Service
 public class ReservationService {
 
+    /** reservation == null means "accepted and queued, not stored yet". */
+    public record AsyncResult(Reservation reservation) {}
+
     private static final int USER_LIMIT = 4;
     private static final int MAX_OPTIMISTIC_ATTEMPTS = 100;
     private static final int IDEMPOTENCY_TTL_SECONDS = 600;
@@ -25,13 +29,16 @@ public class ReservationService {
     private final InventoryRepository repo;
     private final StringRedisTemplate redis;
     private final TransactionTemplate tx;
+    private final ObjectProvider<ReservationRequestProducer> producer;
     private final RedisScript<Long> reserveScript =
             RedisScript.of(new ClassPathResource("scripts/reserve.lua"), Long.class);
 
-    public ReservationService(InventoryRepository repo, StringRedisTemplate redis, TransactionTemplate tx) {
+    public ReservationService(InventoryRepository repo, StringRedisTemplate redis, TransactionTemplate tx,
+                              ObjectProvider<ReservationRequestProducer> producer) {
         this.repo = repo;
         this.redis = redis;
         this.tx = tx;
+        this.producer = producer;
     }
 
     private static String stockKey(long eventId) { return "stock:" + eventId; }
@@ -44,28 +51,30 @@ public class ReservationService {
         return id;
     }
 
+    /** Synchronous strategies. REDIS_ASYNC goes through {@link #reserveAsync}. */
     public Reservation reserve(long eventId, String userId, int qty, String key, Strategy strategy) {
-        // The database strategies dedupe with a DB lookup. The Redis strategy dedupes inside the
-        // Lua script, so rejected requests never touch Postgres at all.
+        if (strategy == Strategy.REDIS_ASYNC) {
+            throw new IllegalArgumentException("Use reserveAsync for REDIS_ASYNC");
+        }
+        // The DB strategies dedupe with a lookup. The Redis strategy dedupes inside the Lua script,
+        // so rejected requests never touch Postgres at all.
         if (strategy != Strategy.REDIS) {
             var existing = repo.findByKey(key);
             if (existing.isPresent()) return existing.get();
         }
-
         try {
             return switch (strategy) {
                 case NAIVE -> naive(eventId, userId, qty, key);
                 case PESSIMISTIC -> pessimistic(eventId, userId, qty, key);
                 case OPTIMISTIC -> optimistic(eventId, userId, qty, key);
                 case REDIS -> redisGated(eventId, userId, qty, key);
+                case REDIS_ASYNC -> throw new IllegalStateException("unreachable");
             };
         } catch (DuplicateKeyException dup) {
-            // UNIQUE(idempotency_key) is the final guard: the loser returns the winner's row.
             return repo.findByKey(key).orElseThrow();
         }
     }
 
-    /** Read, check, write with no locking and no transaction. Oversells under concurrency. */
     private Reservation naive(long eventId, String userId, int qty, String key) {
         int available = repo.available(eventId);
         if (available < qty) throw new SoldOutException();
@@ -73,7 +82,6 @@ public class ReservationService {
         return repo.insert(eventId, userId, qty, key);
     }
 
-    /** SELECT ... FOR UPDATE: correct, but requests queue up on one row lock. */
     private Reservation pessimistic(long eventId, String userId, int qty, String key) {
         return tx.execute(status -> {
             int available = repo.lockAvailable(eventId);
@@ -83,13 +91,12 @@ public class ReservationService {
         });
     }
 
-    /** Version check-and-swap with retries: correct, but heavy retry storms under contention. */
     private Reservation optimistic(long eventId, String userId, int qty, String key) {
         for (int attempt = 0; attempt < MAX_OPTIMISTIC_ATTEMPTS; attempt++) {
             Reservation r = tx.execute(status -> {
                 var inv = repo.availableAndVersion(eventId);
                 if (inv.available() < qty) throw new SoldOutException();
-                if (!repo.updateWithVersion(eventId, qty, inv.version())) return null; // lost the race
+                if (!repo.updateWithVersion(eventId, qty, inv.version())) return null;
                 return repo.insert(eventId, userId, qty, key);
             });
             if (r != null) return r;
@@ -99,38 +106,74 @@ public class ReservationService {
         throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Too much contention, retry");
     }
 
-    /**
-     * One atomic Lua call decides: duplicate? sold out? over the user limit? If all clear it also
-     * decrements stock and records the idempotency key. Only winners touch Postgres, where a
-     * conditional update and the CHECK constraint remain as the final guard.
-     */
-    private Reservation redisGated(long eventId, String userId, int qty, String key) {
-        String idem = idemKey(eventId, key);
+    /** One atomic Lua call: duplicate? sold out? user limit? then decrement and remember the key. */
+    private long runGate(long eventId, String userId, int qty, String key) {
         Long result = redis.execute(reserveScript,
-                List.of(stockKey(eventId), userKey(eventId, userId), idem),
+                List.of(stockKey(eventId), userKey(eventId, userId), idemKey(eventId, key)),
                 String.valueOf(qty), String.valueOf(USER_LIMIT), String.valueOf(IDEMPOTENCY_TTL_SECONDS));
+        return result == null ? -1 : result;
+    }
 
-        if (result == null || result == -1) throw new SoldOutException();
+    private Reservation redisGated(long eventId, String userId, int qty, String key) {
+        long result = runGate(eventId, userId, qty, key);
+        if (result == -1) throw new SoldOutException();
         if (result == -2) throw new LimitExceededException();
         if (result == -3) {
-            // A retry of a request we already accepted: return the original reservation,
-            // or tell the client the first attempt is still being written.
             return repo.findByKey(key).orElseThrow(() ->
                     new ResponseStatusException(HttpStatus.CONFLICT, "Duplicate request still in progress"));
         }
-
         try {
             return tx.execute(status -> {
-                if (!repo.decrementIfAvailable(eventId, qty)) throw new SoldOutException(); // Redis/DB drift
+                if (!repo.decrementIfAvailable(eventId, qty)) throw new SoldOutException();
                 return repo.insert(eventId, userId, qty, key);
             });
         } catch (RuntimeException e) {
-            // Compensate: give the stock back and free the idempotency key so a retry can succeed.
-            redis.opsForValue().increment(stockKey(eventId), qty);
-            redis.opsForValue().decrement(userKey(eventId, userId), qty);
-            redis.delete(idem);
+            releaseRedis(eventId, userId, qty, key);
             throw e;
         }
+    }
+
+    /**
+     * Same Redis gate, but the Postgres write happens later: the request is published to Kafka and a
+     * consumer stores it. If publishing fails, the Redis stock is given back and the client gets 503.
+     */
+    public AsyncResult reserveAsync(long eventId, String userId, int qty, String key) {
+        ReservationRequestProducer kafkaProducer = producer.getIfAvailable();
+        if (kafkaProducer == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED,
+                    "Async mode is off. Start the app with TICKET_ASYNC=true and a Kafka broker.");
+        }
+        long result = runGate(eventId, userId, qty, key);
+        if (result == -1) throw new SoldOutException();
+        if (result == -2) throw new LimitExceededException();
+        if (result == -3) return new AsyncResult(repo.findByKey(key).orElse(null));
+        try {
+            kafkaProducer.send(new ReservationRequest(eventId, userId, qty, key));
+        } catch (RuntimeException e) {
+            releaseRedis(eventId, userId, qty, key);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Queue unavailable, please retry");
+        }
+        return new AsyncResult(null);
+    }
+
+    // ---- Redis helpers used by compensation, expiry and reconciliation ----
+    public void restoreStock(long eventId, String userId, int qty) {
+        redis.opsForValue().increment(stockKey(eventId), qty);
+        redis.opsForValue().decrement(userKey(eventId, userId), qty);
+    }
+
+    public void releaseRedis(long eventId, String userId, int qty, String key) {
+        restoreStock(eventId, userId, qty);
+        redis.delete(idemKey(eventId, key));
+    }
+
+    public Long redisStock(long eventId) {
+        String v = redis.opsForValue().get(stockKey(eventId));
+        return v == null ? null : Long.valueOf(v);
+    }
+
+    public void setRedisStock(long eventId, long value) {
+        redis.opsForValue().set(stockKey(eventId), String.valueOf(value));
     }
 
     public Map<String, Object> stats(long eventId) {
@@ -138,10 +181,9 @@ public class ReservationService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Event not found"));
         Map<String, Object> out = new HashMap<>(repo.reservationTotals(eventId));
         long reserved = ((Number) out.get("tickets_reserved")).longValue();
-        String redisStock = redis.opsForValue().get(stockKey(eventId));
         out.put("total_tickets", total);
         out.put("db_available", repo.available(eventId));
-        out.put("redis_stock", redisStock == null ? null : Long.valueOf(redisStock));
+        out.put("redis_stock", redisStock(eventId));
         out.put("oversold", reserved > total);
         return out;
     }
@@ -150,7 +192,7 @@ public class ReservationService {
         int total = repo.totalTickets(eventId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Event not found"));
         repo.reset(eventId);
-        redis.opsForValue().set(stockKey(eventId), String.valueOf(total));
+        setRedisStock(eventId, total);
         for (String pattern : List.of("user:" + eventId + ":*", "idem:" + eventId + ":*")) {
             Set<String> keys = redis.keys(pattern);
             if (keys != null && !keys.isEmpty()) redis.delete(keys);

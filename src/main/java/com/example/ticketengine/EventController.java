@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
 import java.util.UUID;
@@ -26,23 +27,35 @@ public class EventController {
         return Map.of("id", service.createEvent(req.name(), req.totalTickets()));
     }
 
-    /** strategy = naive | pessimistic | optimistic | redis (default). */
+    /** strategy = naive | pessimistic | optimistic | redis (default) | redis_async. */
     @PostMapping("/{id}/reserve")
-    public ResponseEntity<Reservation> reserve(
+    public ResponseEntity<?> reserve(
             @PathVariable long id,
             @Valid @RequestBody ReserveRequest req,
             @RequestHeader(value = "Idempotency-Key", required = false) String key,
             @RequestParam(defaultValue = "redis") String strategy) {
         String idemKey = (key == null || key.isBlank()) ? UUID.randomUUID().toString() : key;
-        Strategy s = Strategy.valueOf(strategy.toUpperCase());
-        Reservation r = service.reserve(id, req.userId(), req.qty(), idemKey, s);
-        return ResponseEntity.status(HttpStatus.CREATED).body(r);
+        Strategy s;
+        try {
+            s = Strategy.valueOf(strategy.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown strategy: " + strategy);
+        }
+        if (s == Strategy.REDIS_ASYNC) {
+            var result = service.reserveAsync(id, req.userId(), req.qty(), idemKey);
+            if (result.reservation() != null) {
+                return ResponseEntity.status(HttpStatus.CREATED).body(result.reservation());
+            }
+            // 202: accepted and queued. Poll GET /api/reservations/by-key/{key} for the outcome.
+            return ResponseEntity.status(HttpStatus.ACCEPTED).body(Map.of("status", "QUEUED", "idempotencyKey", idemKey));
+        }
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(service.reserve(id, req.userId(), req.qty(), idemKey, s));
     }
 
     @GetMapping("/{id}/stats")
     public Map<String, Object> stats(@PathVariable long id) { return service.stats(id); }
 
-    /** Benchmark helper: wipes reservations and restores stock in Postgres and Redis. */
     @PostMapping("/{id}/reset")
     public Map<String, String> reset(@PathVariable long id) {
         service.reset(id);
