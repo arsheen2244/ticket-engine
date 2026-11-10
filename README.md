@@ -120,9 +120,23 @@ Reading the results:
 - `redis` rejects excess traffic in Redis, so only winners reach Postgres.
 - `redis_async` returns `202` before Postgres is written, so its latency measures acceptance, not durability. Throughput of the whole pipeline is limited by the consumer.
 
+## Observability
+
+Spring Boot Actuator exposes two endpoints (configured under `management.endpoints` in `application.yml`):
+
+| Endpoint | What it gives you |
+|---|---|
+| `GET /actuator/health` | `{"status":"UP"}` when the app can reach its dependencies. Used as the Render health check. |
+| `GET /actuator/prometheus` | Metrics in Prometheus text format (for example HTTP request timings, JVM memory and GC, and the Hikari connection pool). |
+
+```bash
+curl localhost:8080/actuator/health
+curl localhost:8080/actuator/prometheus
+```
+
 ## Deploy
 
-See [DEPLOY.md](DEPLOY.md) (Render + Neon + Upstash free tiers).
+The repo includes a [Render Blueprint](render.yaml) that defines the web service (Docker, free plan, health check on `/actuator/health`). In Render choose **New > Blueprint**, pick the repo, and fill in the secret values it asks for. Postgres and Redis come from Neon and Upstash free tiers. Full steps: [DEPLOY.md](DEPLOY.md).
 
 ## Known limits
 

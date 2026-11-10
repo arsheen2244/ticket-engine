@@ -27,8 +27,11 @@ user and password in their own variables.
 ## Steps (Render example)
 1. Push the project to GitHub.
 2. Create the Postgres (Neon) and Redis (Upstash) instances; copy their details.
-3. Render: New > Web Service > connect the repo > Runtime: Docker.
-4. Add the environment variables above, then deploy. Flyway creates the tables on first start.
+3. Render: New > Blueprint > connect the repo. Render reads `render.yaml` and creates the
+   `ticket-engine` web service (Docker, free plan, health check `/actuator/health`, `DB_POOL=5`).
+   (Manual alternative: New > Web Service > connect the repo > Runtime: Docker.)
+4. Render asks for the secret variables marked `sync: false` in `render.yaml`. Paste the values
+   from step 2, then deploy. Flyway creates the tables on first start.
 5. Open the Render URL: the UI loads at `/`.
 
 ## Cautions

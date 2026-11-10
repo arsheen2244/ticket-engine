@@ -1,0 +1,20 @@
+# Render Blueprint: Render reads this file and creates the web service for you.
+# Values marked "sync: false" are secrets: Render asks you to type them in the dashboard
+# and they are never stored in this repo.
+services:
+  - type: web
+    name: ticket-engine
+    runtime: docker
+    plan: free
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: DB_URL
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: DB_POOL
+        value: "5"
