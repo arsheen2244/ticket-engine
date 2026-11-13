@@ -1,3 +1,9 @@
+# The whole stack with one command:   docker compose up --build
+#   web app      http://localhost:3000   (Next.js, proxies /api to the backend)
+#   backend API  http://localhost:8080   (Spring Boot, async Kafka mode, plus the original demo page at /)
+# Only the infrastructure, to run the backend with `mvn spring-boot:run` instead:
+#   docker compose up -d postgres redis kafka
+# Settings come from a .env file next to this one (copy .env.example). Defaults below are for local use only.
 services:
   postgres:
     image: postgres:16
@@ -7,22 +13,81 @@ services:
       POSTGRES_PASSWORD: tickets
     ports: ["5432:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tickets -d tickets"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   redis:
     image: redis:7
     ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   kafka:
     image: apache/kafka:3.9.0
     ports: ["9092:9092"]
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      # PLAINTEXT (localhost:9092) is for an app running on your machine;
+      # INTERNAL (kafka:19092) is for the backend container on the compose network.
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,INTERNAL://:19092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka:19092
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
+  backend:
+    build: .
+    ports: ["8080:8080"]
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/tickets
+      DB_USER: tickets
+      DB_PASSWORD: tickets
+      REDIS_URL: redis://redis:6379
+      KAFKA_BOOTSTRAP: kafka:19092
+      TICKET_ASYNC: "true"
+      JWT_SECRET: ${JWT_SECRET:-}
+      JWT_TTL_MINUTES: ${JWT_TTL_MINUTES:-60}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me-admin-pass}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      LEGACY_ENDPOINTS: ${LEGACY_ENDPOINTS:-true}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    healthcheck:
+      # The JRE image has no curl, so ask /actuator/health over bash's /dev/tcp.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080 && printf \"GET /actuator/health HTTP/1.0\\r\\n\\r\\n\" >&3 && grep -q UP <&3'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        BACKEND_URL: http://backend:8080
+    ports: ["3000:3000"]
+    depends_on:
+      backend: { condition: service_healthy }
+
 volumes:
   pgdata:

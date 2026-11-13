@@ -5,6 +5,7 @@ on:
   pull_request:
 
 jobs:
+  # Backend: unit and integration tests against real Postgres and Redis (Kafka is embedded in the tests).
   test:
     runs-on: ubuntu-latest
     services:
@@ -33,3 +34,41 @@ jobs:
           cache: maven
       - name: Build and run tests
         run: mvn -B verify
+
+  # Frontend: lint, type check, unit/component tests, production build.
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  # Whole stack: build both images, start everything with one command, run an end-to-end smoke test.
+  stack:
+    runs-on: ubuntu-latest
+    needs: [test, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the stack
+        run: docker compose up -d --build --wait --wait-timeout 420
+      - name: Smoke test through the frontend proxy
+        run: bash scripts/smoke-test.sh
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail 200
+      - name: Stop
+        if: always()
+        run: docker compose down -v
