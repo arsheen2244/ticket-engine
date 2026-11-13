@@ -59,6 +59,19 @@ class LiveStockTest {
         return v;
     }
 
+    /** Waits up to 5 s for an update containing {@code text}; a viewer may see an intermediate count first. */
+    private static String until(BlockingQueue<String> q, String text) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        String last = null;
+        while (System.nanoTime() < deadline) {
+            String v = q.poll(100, TimeUnit.MILLISECONDS);
+            if (v == null) continue;
+            last = v;
+            if (v.contains(text)) return v;
+        }
+        throw new AssertionError("No SSE update containing " + text + " within 5 s; last was " + last);
+    }
+
     @Test
     void stream_sends_the_current_count_then_every_change() throws Exception {
         long id = service.createEvent("live", 3);
@@ -66,13 +79,21 @@ class LiveStockTest {
         assertThat(next(updates)).contains("\"remaining\":3").contains("\"soldOut\":false");
 
         service.reserve(id, "live-a", 2, UUID.randomUUID().toString(), Strategy.REDIS);
-        assertThat(next(updates)).contains("\"remaining\":1");
+        until(updates, "\"remaining\":1");
 
         service.reserve(id, "live-b", 1, UUID.randomUUID().toString(), Strategy.REDIS);
-        assertThat(next(updates)).contains("\"remaining\":0").contains("\"soldOut\":true");
+        assertThat(until(updates, "\"remaining\":0")).contains("\"soldOut\":true");
 
         service.reset(id);
-        assertThat(next(updates)).contains("\"remaining\":3");
+        until(updates, "\"remaining\":3");
+    }
+
+    @Test
+    void an_unchanged_count_is_not_sent_again() throws Exception {
+        long id = service.createEvent("live-quiet", 4);
+        BlockingQueue<String> updates = openStream(id);
+        next(updates);
+        assertThat(updates.poll(700, TimeUnit.MILLISECONDS)).as("no update while nothing changes").isNull();
     }
 
     @Test
@@ -83,8 +104,8 @@ class LiveStockTest {
         next(a);
         next(b);
         service.reserve(id, "live-c", 1, UUID.randomUUID().toString(), Strategy.REDIS);
-        assertThat(next(a)).contains("\"remaining\":4");
-        assertThat(next(b)).contains("\"remaining\":4");
+        until(a, "\"remaining\":4");
+        until(b, "\"remaining\":4");
     }
 
     @Test

@@ -69,6 +69,7 @@ public class LiveStockHub {
         emitter.onCompletion(remove);
         emitter.onTimeout(remove);
         emitter.onError(e -> remove.run());
+        lastSent.putIfAbsent(eventId, currentRemaining); // so the next poll does not resend the same count
         send(eventId, emitter, new StockUpdate(eventId, currentRemaining, currentRemaining == 0));
         return emitter;
     }
