@@ -35,6 +35,10 @@ public class EventController {
             @RequestHeader(value = "Idempotency-Key", required = false) String key,
             @RequestParam(defaultValue = "redis") String strategy) {
         String idemKey = (key == null || key.isBlank()) ? UUID.randomUUID().toString() : key;
+        // "acct-" ids and keys belong to signed-in accounts (POST /api/bookings); this public endpoint may not use them.
+        if (req.userId().startsWith("acct-") || idemKey.startsWith("acct-")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "userId and Idempotency-Key may not start with acct-");
+        }
         Strategy s;
         try {
             s = Strategy.valueOf(strategy.toUpperCase());

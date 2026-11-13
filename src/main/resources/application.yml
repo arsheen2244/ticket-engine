@@ -26,6 +26,22 @@ ticket:
   # Required in the X-Admin-Token header for POST /api/events and POST /api/events/{id}/reset.
   # Empty = those endpoints stay open (local dev only; a warning is logged at startup).
   admin-token: ${ADMIN_TOKEN:}
+  # true  = the original public API (reserve with any userId, pay, create/reset with X-Admin-Token) stays
+  #         available for k6 benchmarks and the demo page at /.
+  # false = only the signed-in web app API is open. Use false on a public deployment.
+  legacy-endpoints:
+    enabled: ${LEGACY_ENDPOINTS:true}
+  jwt:
+    # HMAC key for signing login tokens, at least 32 bytes. Empty = random key per start (dev only).
+    secret: ${JWT_SECRET:}
+    ttl-minutes: ${JWT_TTL_MINUTES:60}
+  cookie:
+    # true when served over HTTPS, so the browser only sends the login cookie over HTTPS.
+    secure: ${COOKIE_SECURE:false}
+  admin:
+    # The first ADMIN account, created (or promoted) at startup. Sign-up only creates USER accounts.
+    email: ${ADMIN_EMAIL:}
+    password: ${ADMIN_PASSWORD:}
 management:
   endpoints:
     web:
