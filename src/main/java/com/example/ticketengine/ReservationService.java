@@ -184,6 +184,16 @@ public class ReservationService {
         return Boolean.TRUE.equals(redis.hasKey(idemKey(eventId, key)));
     }
 
+    /** Current Redis stock counters for several events in one round trip; missing counters are left out. */
+    public Map<Long, Long> redisStocks(List<Long> eventIds) {
+        List<String> values = redis.opsForValue().multiGet(eventIds.stream().map(ReservationService::stockKey).toList());
+        Map<Long, Long> out = new HashMap<>();
+        for (int i = 0; values != null && i < eventIds.size(); i++) {
+            if (values.get(i) != null) out.put(eventIds.get(i), Long.valueOf(values.get(i)));
+        }
+        return out;
+    }
+
     /** True when the app runs with TICKET_ASYNC=true, so the redis_async strategy is available. */
     public boolean asyncEnabled() { return producer.getIfAvailable() != null; }
 

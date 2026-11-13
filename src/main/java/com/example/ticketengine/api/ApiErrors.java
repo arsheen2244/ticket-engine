@@ -17,7 +17,8 @@ import java.util.stream.Collectors;
  * Error bodies for the endpoints added for the web app: always {"error": "..."} so the frontend can
  * show the message. Limited to these packages, so the original API's responses are unchanged.
  */
-@RestControllerAdvice(basePackages = {"com.example.ticketengine.auth", "com.example.ticketengine.api"})
+@RestControllerAdvice(basePackages = {"com.example.ticketengine.auth", "com.example.ticketengine.api",
+        "com.example.ticketengine.live"})
 public class ApiErrors {
 
     public static final String SOLD_OUT = "Sold out";
