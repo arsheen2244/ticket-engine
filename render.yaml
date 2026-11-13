@@ -16,5 +16,7 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
+      - key: ADMIN_TOKEN
+        sync: false
       - key: DB_POOL
         value: "5"

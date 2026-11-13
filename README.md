@@ -69,9 +69,12 @@ Running Kafka without Docker: see [docs/RUNNING-KAFKA.md](docs/RUNNING-KAFKA.md)
 
 ## API
 
+Creating and resetting events are admin actions. When the server has `ADMIN_TOKEN` set, they need the header `X-Admin-Token: <token>` and return `401` without it. When `ADMIN_TOKEN` is unset (local dev), they are open and the app logs a warning at startup. The examples below read the token from your shell; an empty header is harmless when no token is configured.
+
 ```bash
-# create an event with 1000 tickets
+# create an event with 1000 tickets (admin)
 curl -X POST localhost:8080/api/events -H 'Content-Type: application/json' \
+  -H "X-Admin-Token: $ADMIN_TOKEN" \
   -d '{"name":"Concert","totalTickets":1000}'
 
 # reserve (strategy: naive | pessimistic | optimistic | redis | redis_async)
@@ -82,10 +85,12 @@ curl -X POST 'localhost:8080/api/events/1/reserve?strategy=redis' \
 curl localhost:8080/api/events/1/stats                    # includes "oversold": true/false
 curl localhost:8080/api/reservations/by-key/abc-123       # outcome of an async reservation
 curl -X POST localhost:8080/api/reservations/<id>/pay     # mock payment
-curl -X POST localhost:8080/api/events/1/reset
+curl -X POST localhost:8080/api/events/1/reset -H "X-Admin-Token: $ADMIN_TOKEN"   # admin
 ```
 
-Status codes: `201` reserved, `202` queued (async), `409` sold out or payment conflict, `429` per-user limit.
+Status codes: `201` reserved, `202` queued (async), `401` missing or wrong admin token, `409` sold out or payment conflict, `429` per-user limit.
+
+The k6 script and `run-benchmarks.ps1` pass the header automatically when `ADMIN_TOKEN` is set in your shell (`k6 run -e ADMIN_TOKEN=...` when calling k6 directly). The web UI has an admin token field for the same purpose.
 
 ## Tests
 
@@ -143,4 +148,4 @@ The repo includes a [Render Blueprint](render.yaml) that defines the web service
 - Single Kafka broker with replication factor 1 (development only).
 - A crash after the Redis gate but before the Kafka publish leaves a decremented Redis counter; the reconciliation job repairs it.
 - Per-user limit counters are not reconciled.
-- `/reset` and the stats endpoints are unauthenticated (demo only).
+- Admin protection is a single shared token, not user accounts. Reserve, pay and stats endpoints are public by design (demo only).

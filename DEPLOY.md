@@ -18,6 +18,12 @@ at `/`, so you deploy ONE service plus two managed databases.
 | `DB_PASSWORD` | `<password>` |
 | `DB_POOL` | `5` (free Postgres tiers allow few connections) |
 | `REDIS_URL` | `rediss://default:<password>@<host>:6379` |
+| `ADMIN_TOKEN` | a long random string, e.g. the output of `openssl rand -hex 32` |
+
+`ADMIN_TOKEN` protects `POST /api/events` and `POST /api/events/{id}/reset`: callers must send it in
+the `X-Admin-Token` header or get `401`. If it is unset, those endpoints are open to anyone and the
+app logs a warning at startup, so always set it on a public deployment. Paste it into the admin token
+field of the web UI to create or reset events there.
 
 `PORT` is set by the platform automatically.
 
@@ -37,4 +43,4 @@ user and password in their own variables.
 ## Cautions
 - Free web services sleep when idle, so the first request can take about a minute.
 - Benchmark with k6 against `localhost` for README numbers. Against a cloud URL you mostly measure your own internet.
-- `/reset` and the stats endpoints are open to anyone. Fine for a demo; add auth before sharing widely.
+- Reserve, pay and stats endpoints are open to anyone by design; only create and reset need `ADMIN_TOKEN`.

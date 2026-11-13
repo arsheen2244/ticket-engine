@@ -23,6 +23,9 @@ ticket:
   # false = the app behaves exactly as before and needs no Kafka.
   # true  = enables the redis_async strategy, consumer, outbox publisher and notification listener.
   async: ${TICKET_ASYNC:false}
+  # Required in the X-Admin-Token header for POST /api/events and POST /api/events/{id}/reset.
+  # Empty = those endpoints stay open (local dev only; a warning is logged at startup).
+  admin-token: ${ADMIN_TOKEN:}
 management:
   endpoints:
     web:

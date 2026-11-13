@@ -1,6 +1,7 @@
 # Runs the k6 rush against every strategy and prints a markdown table for the README.
 # Prerequisites: Postgres, Redis, Kafka running ; app running with $env:TICKET_ASYNC = "true" ; k6 installed.
 # Run from the project root:  .\run-benchmarks.ps1
+# If the app was started with ADMIN_TOKEN, set the same value in this shell first:  $env:ADMIN_TOKEN = "..."
 
 $base = "http://127.0.0.1:8080"
 $strategies = @("naive", "pessimistic", "optimistic", "redis", "redis_async")
@@ -17,7 +18,9 @@ $rows = @()
 
 foreach ($s in $strategies) {
     Write-Host "=== $s (running, takes a minute or two) ===" -ForegroundColor Cyan
-    & k6 run --summary-export "results/$s.json" -e STRATEGY=$s -e BASE_URL=$base load-tests/rush.js *> "results/$s.log"
+    $k6Args = @("run", "--summary-export", "results/$s.json", "-e", "STRATEGY=$s", "-e", "BASE_URL=$base")
+    if ($env:ADMIN_TOKEN) { $k6Args += @("-e", "ADMIN_TOKEN=$env:ADMIN_TOKEN") }
+    & k6 @k6Args load-tests/rush.js *> "results/$s.log"
 
     $line = Select-String -Path "results/$s.log" -Pattern "RESULT strategy" | Select-Object -Last 1
     if (-not $line) {
