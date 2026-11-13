@@ -1,6 +1,7 @@
-# Render Blueprint: Render reads this file and creates the web service for you.
+# Render Blueprint: Render reads this file and creates the backend web service for you.
 # Values marked "sync: false" are secrets: Render asks you to type them in the dashboard
-# and they are never stored in this repo.
+# and they are never stored in this repo. "generateValue: true" makes Render create a random secret.
+# The frontend is deployed separately (Vercel, or a second Render service); see DEPLOY.md.
 services:
   - type: web
     name: ticket-engine
@@ -16,7 +17,17 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
       - key: ADMIN_TOKEN
         sync: false
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: LEGACY_ENDPOINTS
+        value: "false"
       - key: DB_POOL
         value: "5"
