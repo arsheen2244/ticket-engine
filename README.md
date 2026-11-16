@@ -1,6 +1,19 @@
 # Flash-Sale Ticket Booking Engine
 
+[![CI](https://github.com/arsheen2244/ticket-engine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/arsheen2244/ticket-engine/actions/workflows/ci.yml)
+![Java 21](https://img.shields.io/badge/Java-21-ED8B00?logo=openjdk&logoColor=white)
+![Spring Boot 3](https://img.shields.io/badge/Spring_Boot-3-6DB33F?logo=springboot&logoColor=white)
+![Next.js 15](https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-DC382D?logo=redis&logoColor=white)
+![Kafka](https://img.shields.io/badge/Kafka-231F20?logo=apachekafka&logoColor=white)
+[![Backend on Render](https://img.shields.io/badge/backend-Render-4F46E5?logo=render&logoColor=white)](https://ticket-engine-f5bz.onrender.com/actuator/health)
+[![Frontend on Vercel](https://img.shields.io/badge/frontend-Vercel-000000?logo=vercel&logoColor=white)](https://ticket-engine-lilac.vercel.app)
+
 A full-stack flash-sale app that sells a limited number of tickets to thousands of concurrent users **without overselling**.
+
+**Live:** web app [ticket-engine-lilac.vercel.app](https://ticket-engine-lilac.vercel.app) · API health: [ticket-engine-f5bz.onrender.com/actuator/health](https://ticket-engine-f5bz.onrender.com/actuator/health). It runs on free plans, so the first request after 15 idle minutes takes 30 to 60 seconds while the backend wakes up.
 
 - **Backend:** a Spring Boot API with five reservation strategies behind one endpoint, from a deliberately broken baseline to an async Kafka pipeline, so you can benchmark them against each other.
 - **Frontend (FlashTix):** a Next.js app on top of it. Users sign up, watch the remaining-ticket count change live, and book safely against double clicks. Admins create sales and watch them sell.
@@ -25,6 +38,25 @@ The backend's original demo page (at `:8080/`) shows the race condition the engi
 |---|---|
 | ![Naive strategy oversold](docs/naive-oversold.png) | ![Redis strategy safe](docs/redis-safe.png) |
 
+## Live deployment
+
+![FlashTix in production: browser to Vercel (Next.js) to Render (Spring Boot), which uses Neon PostgreSQL and Upstash Redis; GitHub pushes run CI and auto-deploy](docs/deployment.svg)
+
+| Part | Host | Plan | What it runs |
+|---|---|---|---|
+| Web app | Vercel | Hobby (free) | Next.js frontend; forwards `/api/*` to the backend |
+| API | Render (Docker, Oregon) | Free | Spring Boot backend, built from the repo's `Dockerfile` via [`render.yaml`](render.yaml) |
+| Database | Neon (Singapore) | Free | PostgreSQL 18; Flyway creates the tables on first start |
+| Cache and stock gate | Upstash | Free | Redis over TLS (`rediss://`) |
+| CI | GitHub Actions | Free | Backend tests, frontend checks, full-stack smoke test |
+
+What is different from `docker compose up`:
+- **No Kafka in the cloud.** Free hosted Kafka is hard to find, so the deployed API uses the synchronous `redis` strategy (`201` straight away). The same UI also handles the async `202 → poll` flow that Compose runs.
+- **Secrets only in Render.** `JWT_SECRET`, the database and Redis passwords and the admin login are Render environment variables. The frontend holds none; its only setting is `BACKEND_URL`.
+- **Production flags:** `COOKIE_SECURE=true` (login cookie over HTTPS only) and `LEGACY_ENDPOINTS=false` (the open benchmark API is switched off).
+
+Step-by-step guide: [DEPLOY.md](DEPLOY.md).
+
 ## Architecture
 
 ```mermaid
@@ -42,15 +74,38 @@ flowchart LR
 
 How a booking flows (async mode, which is what `docker compose up` runs):
 
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant N as Next.js (/api proxy)
+    participant A as Spring Boot API
+    participant R as Redis (Lua gate)
+    participant K as Kafka
+    participant C as Consumer
+    participant P as PostgreSQL
+
+    U->>N: Click "Book" (one Idempotency-Key per attempt)
+    N->>A: POST /api/bookings (JWT cookie, Idempotency-Key)
+    A->>R: Atomic Lua: stock, per-user limit, duplicate key
+    alt sold out
+        R-->>A: rejected
+        A-->>U: 409 "Sold out"
+    else accepted
+        R-->>A: ok (stock decremented)
+        A->>K: reservation-requests
+        A-->>U: 202 QUEUED ("Booking in progress")
+        K->>C: deliver (3 retries, then the DLT topic)
+        C->>P: ONE transaction: stock, reservation, outbox row
+        loop until stored or failed
+            U->>A: GET /api/bookings/{key}
+            A-->>U: QUEUED / PENDING_PAYMENT ("Confirmed") / FAILED
+        end
+        P-->>K: outbox publisher sends reservation-events
+    end
 ```
-Browser -> Next.js /api proxy -> POST /api/bookings (JWT, Idempotency-Key)
-             -> Redis Lua gate (stock, per-user limit, duplicate key)   -- sold out? 409
-             -> Kafka: reservation-requests  --(3 retries)--> reservation-requests.DLT
-             <- 202 QUEUED  ("Booking in progress")
-Consumer: ONE Postgres transaction = decrement stock + insert reservation + insert outbox row
-Browser polls GET /api/bookings/{key} -> PENDING_PAYMENT ("Confirmed") or FAILED
-Outbox publisher (FOR UPDATE SKIP LOCKED) -> Kafka: reservation-events -> notification consumer
-```
+
+In the synchronous `redis` mode (the live deployment), the API writes Postgres right after the Lua gate and answers `201` at once, so there is no Kafka step and no polling.
 
 Full sequence diagram and failure table: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -277,7 +332,7 @@ curl localhost:8080/actuator/prometheus
 
 ## Deploy
 
-Backend on Render (the [Render Blueprint](render.yaml) defines it), Postgres on Neon, Redis on Upstash, frontend on Vercel. Step by step: [DEPLOY.md](DEPLOY.md).
+Backend on Render (the [Render Blueprint](render.yaml) defines it), Postgres on Neon, Redis on Upstash, frontend on Vercel. See [Live deployment](#live-deployment) for the diagram and [DEPLOY.md](DEPLOY.md) for the steps.
 
 ## Known limits
 

@@ -1,0 +1,163 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" width="1200" height="700" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>FlashTix production deployment: Vercel frontend, Render API, Neon Postgres, Upstash Redis</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#059669"/>
+    </marker>
+    <marker id="arrow-grey" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+    </marker>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+
+  <!-- background -->
+  <rect width="1200" height="700" rx="18" fill="#f8fafc"/>
+  <rect x="0.5" y="0.5" width="1199" height="699" rx="18" fill="none" stroke="#e2e8f0"/>
+
+  <!-- title -->
+  <text x="40" y="52" font-size="26" font-weight="700" fill="#0f172a">FlashTix in production</text>
+  <text x="40" y="80" font-size="15" fill="#64748b">Every service on a free tier. The browser talks to one domain; Next.js forwards /api/* to the API.</text>
+
+  <!-- ============ Browser ============ -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="200" width="175" height="150" rx="14" fill="#ffffff" stroke="#cbd5e1"/>
+  </g>
+  <rect x="40" y="200" width="175" height="34" rx="14" fill="#334155"/>
+  <rect x="40" y="220" width="175" height="14" fill="#334155"/>
+  <circle cx="58" cy="217" r="4" fill="#f87171"/><circle cx="72" cy="217" r="4" fill="#fbbf24"/><circle cx="86" cy="217" r="4" fill="#34d399"/>
+  <text x="127" y="257" font-size="16" font-weight="700" fill="#0f172a" text-anchor="middle">User's browser</text>
+  <text x="127" y="282" font-size="13" fill="#475569" text-anchor="middle">Desktop or phone</text>
+  <text x="127" y="304" font-size="13" fill="#475569" text-anchor="middle">Login kept in an</text>
+  <text x="127" y="322" font-size="13" fill="#475569" text-anchor="middle">httpOnly cookie</text>
+
+  <!-- ============ Vercel ============ -->
+  <g filter="url(#shadow)">
+    <rect x="275" y="130" width="255" height="290" rx="14" fill="#ffffff" stroke="#cbd5e1"/>
+  </g>
+  <rect x="275" y="130" width="255" height="40" rx="14" fill="#000000"/>
+  <rect x="275" y="156" width="255" height="14" fill="#000000"/>
+  <path d="M296 160 L306 142 L316 160 z" fill="#ffffff"/>
+  <text x="326" y="157" font-size="15" font-weight="700" fill="#ffffff">Vercel</text>
+  <text x="515" y="157" font-size="12" fill="#cbd5e1" text-anchor="end">frontend</text>
+  <text x="293" y="198" font-size="17" font-weight="700" fill="#0f172a">Next.js 15 (FlashTix)</text>
+  <text x="293" y="220" font-size="13" fill="#475569">App Router · React 19 · TypeScript</text>
+  <text x="293" y="238" font-size="13" fill="#475569">Tailwind CSS v4</text>
+  <line x1="293" y1="252" x2="512" y2="252" stroke="#e2e8f0"/>
+  <text x="293" y="274" font-size="13" fill="#0f172a">• Events, live event page, orders, admin</text>
+  <text x="293" y="296" font-size="13" fill="#0f172a">• Middleware guards signed-in pages</text>
+  <text x="293" y="318" font-size="13" fill="#0f172a">• Rewrites /api/* to the backend</text>
+  <rect x="293" y="336" width="219" height="64" rx="8" fill="#f1f5f9"/>
+  <text x="303" y="359" font-size="12.5" fill="#334155">Same origin for the browser, so the</text>
+  <text x="303" y="377" font-size="12.5" fill="#334155">cookie and the live stream just work.</text>
+  <text x="303" y="393" font-size="12.5" fill="#334155">No CORS setup.</text>
+
+  <!-- ============ Render ============ -->
+  <g filter="url(#shadow)">
+    <rect x="600" y="110" width="300" height="330" rx="14" fill="#ffffff" stroke="#cbd5e1"/>
+  </g>
+  <rect x="600" y="110" width="300" height="40" rx="14" fill="#4f46e5"/>
+  <rect x="600" y="136" width="300" height="14" fill="#4f46e5"/>
+  <text x="618" y="137" font-size="15" font-weight="700" fill="#ffffff">Render</text>
+  <text x="885" y="137" font-size="12" fill="#e0e7ff" text-anchor="end">Docker · Oregon · backend</text>
+  <text x="618" y="178" font-size="17" font-weight="700" fill="#0f172a">Spring Boot 3 API (Java 21)</text>
+  <text x="618" y="200" font-size="13" fill="#475569">REST + Server-Sent Events</text>
+  <line x1="618" y1="214" x2="882" y2="214" stroke="#e2e8f0"/>
+  <text x="618" y="236" font-size="13" fill="#0f172a">• Spring Security, JWT, USER / ADMIN roles</text>
+  <text x="618" y="258" font-size="13" fill="#0f172a">• Redis Lua gate: stock, per-user limit,</text>
+  <text x="630" y="276" font-size="13" fill="#0f172a">idempotency key, so no overselling</text>
+  <text x="618" y="298" font-size="13" fill="#0f172a">• Live stock hub: pushes count changes</text>
+  <text x="618" y="320" font-size="13" fill="#0f172a">• Flyway runs migrations on start</text>
+  <text x="618" y="342" font-size="13" fill="#0f172a">• Expiry and reconciliation jobs</text>
+  <rect x="618" y="356" width="264" height="70" rx="8" fill="#eef2ff"/>
+  <text x="628" y="377" font-size="12.5" fill="#3730a3">Health check: /actuator/health</text>
+  <text x="628" y="396" font-size="12.5" fill="#3730a3">Strategy: redis (sync). Kafka async</text>
+  <text x="628" y="414" font-size="12.5" fill="#3730a3">mode runs in Docker Compose only.</text>
+
+  <!-- ============ Neon ============ -->
+  <g filter="url(#shadow)">
+    <rect x="970" y="110" width="195" height="160" rx="14" fill="#ffffff" stroke="#cbd5e1"/>
+  </g>
+  <rect x="970" y="110" width="195" height="40" rx="14" fill="#00e599"/>
+  <rect x="970" y="136" width="195" height="14" fill="#00e599"/>
+  <text x="986" y="137" font-size="15" font-weight="700" fill="#052e16">Neon</text>
+  <text x="1150" y="137" font-size="12" fill="#064e3b" text-anchor="end">Singapore</text>
+  <text x="986" y="178" font-size="17" font-weight="700" fill="#0f172a">PostgreSQL 18</text>
+  <text x="986" y="202" font-size="13" fill="#475569">Source of truth:</text>
+  <text x="986" y="222" font-size="13" fill="#0f172a">events, reservations,</text>
+  <text x="986" y="242" font-size="13" fill="#0f172a">users, outbox</text>
+
+  <!-- ============ Upstash ============ -->
+  <g filter="url(#shadow)">
+    <rect x="970" y="295" width="195" height="145" rx="14" fill="#ffffff" stroke="#cbd5e1"/>
+  </g>
+  <rect x="970" y="295" width="195" height="40" rx="14" fill="#dc382d"/>
+  <rect x="970" y="321" width="195" height="14" fill="#dc382d"/>
+  <text x="986" y="322" font-size="15" font-weight="700" fill="#ffffff">Upstash</text>
+  <text x="1150" y="322" font-size="12" fill="#fee2e2" text-anchor="end">TLS only</text>
+  <text x="986" y="362" font-size="17" font-weight="700" fill="#0f172a">Redis</text>
+  <text x="986" y="386" font-size="13" fill="#0f172a">Live stock counters</text>
+  <text x="986" y="406" font-size="13" fill="#0f172a">Idempotency keys</text>
+  <text x="986" y="426" font-size="13" fill="#0f172a">Logout deny-list</text>
+
+  <!-- ============ request arrows ============ -->
+  <!-- browser -> vercel -->
+  <line x1="217" y1="262" x2="271" y2="262" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="244" y="252" font-size="12" font-weight="600" fill="#475569" text-anchor="middle">HTTPS</text>
+  <!-- vercel -> render -->
+  <line x1="532" y1="250" x2="596" y2="250" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="564" y="240" font-size="12" font-weight="600" fill="#475569" text-anchor="middle">/api/*</text>
+  <!-- render -> vercel -> browser: SSE -->
+  <line x1="596" y1="300" x2="532" y2="300" stroke="#059669" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrow-green)"/>
+  <text x="564" y="320" font-size="12" font-weight="600" fill="#059669" text-anchor="middle">SSE</text>
+  <line x1="271" y1="300" x2="217" y2="300" stroke="#059669" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arrow-green)"/>
+  <text x="244" y="320" font-size="12" font-weight="600" fill="#059669" text-anchor="middle">live count</text>
+  <!-- render -> neon -->
+  <line x1="902" y1="190" x2="966" y2="190" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="934" y="180" font-size="12" font-weight="600" fill="#475569" text-anchor="middle">JDBC</text>
+  <text x="934" y="210" font-size="11" fill="#64748b" text-anchor="middle">TLS</text>
+  <!-- render -> upstash -->
+  <line x1="902" y1="370" x2="966" y2="370" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="934" y="360" font-size="12" font-weight="600" fill="#475569" text-anchor="middle">rediss://</text>
+  <text x="934" y="390" font-size="11" fill="#64748b" text-anchor="middle">TLS</text>
+
+  <!-- ============ CI / CD ============ -->
+  <text x="40" y="500" font-size="13" font-weight="700" fill="#64748b" letter-spacing="1">BUILD AND DEPLOY</text>
+
+  <g filter="url(#shadow)">
+    <rect x="40" y="520" width="235" height="120" rx="14" fill="#ffffff" stroke="#cbd5e1"/>
+  </g>
+  <text x="60" y="556" font-size="17" font-weight="700" fill="#0f172a">GitHub</text>
+  <text x="60" y="580" font-size="13" fill="#475569">arsheen2244/ticket-engine</text>
+  <text x="60" y="602" font-size="13" fill="#475569">Pull request, then merge</text>
+  <text x="60" y="620" font-size="13" fill="#475569">to main</text>
+
+  <g filter="url(#shadow)">
+    <rect x="335" y="520" width="300" height="120" rx="14" fill="#ffffff" stroke="#cbd5e1"/>
+  </g>
+  <text x="355" y="556" font-size="17" font-weight="700" fill="#0f172a">GitHub Actions CI</text>
+  <text x="355" y="580" font-size="13" fill="#0f172a">1. Backend tests (Postgres + Redis)</text>
+  <text x="355" y="600" font-size="13" fill="#0f172a">2. Frontend lint, types, tests, build</text>
+  <text x="355" y="620" font-size="13" fill="#0f172a">3. docker compose up + smoke test</text>
+  <line x1="277" y1="580" x2="331" y2="580" stroke="#475569" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="304" y="570" font-size="11" fill="#64748b" text-anchor="middle">every push</text>
+
+  <!-- auto-deploy lines from GitHub to Vercel and Render -->
+  <path d="M240 518 L240 470 L740 470 L740 444" fill="none" stroke="#94a3b8" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#arrow-grey)"/>
+  <path d="M402 470 L402 424" fill="none" stroke="#94a3b8" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#arrow-grey)"/>
+  <rect x="470" y="459" width="200" height="22" rx="11" fill="#f8fafc"/>
+  <text x="570" y="474" font-size="12" font-weight="600" fill="#64748b" text-anchor="middle">push to main → auto-deploy</text>
+
+  <!-- notes -->
+  <g filter="url(#shadow)">
+    <rect x="695" y="520" width="470" height="120" rx="14" fill="#ffffff" stroke="#cbd5e1"/>
+  </g>
+  <text x="715" y="556" font-size="17" font-weight="700" fill="#0f172a">Secrets and free-tier notes</text>
+  <text x="715" y="580" font-size="13" fill="#0f172a">• JWT secret, DB and Redis passwords live only in Render</text>
+  <text x="730" y="598" font-size="13" fill="#0f172a">environment variables; the frontend holds no secrets.</text>
+  <text x="715" y="620" font-size="13" fill="#0f172a">• Render's free plan sleeps after 15 idle minutes (slow first load).</text>
+</svg>
