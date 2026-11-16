@@ -2,3 +2,9 @@ target/
 .git/
 .idea/
 .vscode/
+# The backend image only needs pom.xml and src/; keep the frontend and local files out of its build context.
+frontend/
+load-tests/
+results/
+docs/
+.env

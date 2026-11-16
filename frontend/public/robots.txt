@@ -1,0 +1,5 @@
+# Public pages may be indexed; signed-in and admin pages may not.
+User-agent: *
+Disallow: /admin
+Disallow: /orders
+Disallow: /bookings

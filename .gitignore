@@ -6,3 +6,8 @@ target/
 results/
 target/
 *.zip
+
+# Local secrets. Copy .env.example instead.
+.env
+.env.*
+!.env.example

@@ -43,6 +43,8 @@ pre{margin:0;max-height:240px;overflow:auto;font:12px/1.5 ui-monospace,Consolas,
     <h2>1. Event</h2>
     <label>Name</label><input id="name" value="Concert">
     <label>Total tickets</label><input id="total" type="number" min="1" value="1000">
+    <label>Admin token (only needed if the server sets ADMIN_TOKEN)</label>
+    <input id="adminToken" type="password" autocomplete="off" placeholder="sent as X-Admin-Token">
     <button id="create">Create event</button>
     <div class="row" style="margin-top:12px">
       <input id="eventId" placeholder="Event id" style="flex:2">
@@ -109,6 +111,12 @@ function log(msg) {
   const el = $('log');
   el.textContent = new Date().toLocaleTimeString() + '  ' + msg + '\n' + el.textContent;
 }
+try { $('adminToken').value = sessionStorage.getItem('adminToken') || ''; } catch (e) {}
+$('adminToken').oninput = () => { try { sessionStorage.setItem('adminToken', $('adminToken').value); } catch (e) {} };
+function adminHeaders(extra) {
+  const t = $('adminToken').value.trim();
+  return t ? { ...extra, 'X-Admin-Token': t } : { ...extra };
+}
 async function api(path, opts) {
   const r = await fetch(path, opts);
   let body = null;
@@ -146,17 +154,18 @@ refresh();
 
 $('create').onclick = async () => {
   const { status, body } = await api('/api/events', {
-    method: 'POST', headers: JSON_H,
+    method: 'POST', headers: adminHeaders(JSON_H),
     body: JSON.stringify({ name: $('name').value, totalTickets: parseInt($('total').value) })
   });
   if (status === 200) { setEvent(body.id); log(`Created event ${body.id}`); }
-  else log(`Create failed (${status})`);
+  else log(`Create failed (${status})` + (status === 401 ? ': enter the admin token' : ''));
 };
 $('use').onclick = () => { if ($('eventId').value) setEvent($('eventId').value); };
 $('reset').onclick = async () => {
   if (!eventId) return log('Pick an event first');
-  await api(`/api/events/${eventId}/reset`, { method: 'POST' });
-  log(`Reset event ${eventId}`); refresh();
+  const { status } = await api(`/api/events/${eventId}/reset`, { method: 'POST', headers: adminHeaders() });
+  log(status === 200 ? `Reset event ${eventId}` : `Reset failed (${status})` + (status === 401 ? ': enter the admin token' : ''));
+  refresh();
 };
 $('reserve').onclick = async () => {
   if (!eventId) return log('Create or pick an event first');
@@ -186,8 +195,11 @@ $('pay').onclick = async () => {
 $('rush').onclick = async () => {
   if (!eventId) return log('Create or pick an event first');
   const n = parseInt($('rushN').value), strat = $('rushStrategy').value;
+  const reset = await api(`/api/events/${eventId}/reset`, { method: 'POST', headers: adminHeaders() });
+  if (reset.status !== 200) {
+    return log(`Rush needs a reset first, which failed (${reset.status})` + (reset.status === 401 ? ': enter the admin token' : ''));
+  }
   const btn = $('rush'); btn.disabled = true;
-  await api(`/api/events/${eventId}/reset`, { method: 'POST' });
   const counts = {}, t0 = performance.now(), stamp = Date.now();
   log(`Rush started: ${n} requests, strategy=${strat}`);
   await Promise.all(Array.from({ length: n }, (_, i) =>

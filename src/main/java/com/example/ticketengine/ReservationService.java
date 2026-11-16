@@ -176,6 +176,27 @@ public class ReservationService {
         redis.opsForValue().set(stockKey(eventId), String.valueOf(value));
     }
 
+    /**
+     * True while the Redis gate remembers this key as accepted. For an async booking with no Postgres row
+     * yet, true means "still queued"; false means it was released (rejected) or never accepted.
+     */
+    public boolean isAcceptedInRedis(long eventId, String key) {
+        return Boolean.TRUE.equals(redis.hasKey(idemKey(eventId, key)));
+    }
+
+    /** Current Redis stock counters for several events in one round trip; missing counters are left out. */
+    public Map<Long, Long> redisStocks(List<Long> eventIds) {
+        List<String> values = redis.opsForValue().multiGet(eventIds.stream().map(ReservationService::stockKey).toList());
+        Map<Long, Long> out = new HashMap<>();
+        for (int i = 0; values != null && i < eventIds.size(); i++) {
+            if (values.get(i) != null) out.put(eventIds.get(i), Long.valueOf(values.get(i)));
+        }
+        return out;
+    }
+
+    /** True when the app runs with TICKET_ASYNC=true, so the redis_async strategy is available. */
+    public boolean asyncEnabled() { return producer.getIfAvailable() != null; }
+
     public Map<String, Object> stats(long eventId) {
         int total = repo.totalTickets(eventId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Event not found"));
