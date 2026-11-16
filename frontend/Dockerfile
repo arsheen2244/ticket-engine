@@ -1,10 +1,11 @@
 # Next.js frontend, built as a small standalone Node server.
-FROM node:22.11.0-alpine AS deps
+# Node 22.12+ is required: Tailwind v4's build tooling require()s ES modules, which older 22.x cannot do.
+FROM node:22.16.0-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 
-FROM node:22.11.0-alpine AS build
+FROM node:22.16.0-alpine AS build
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 # The /api proxy target is baked in at build time (see next.config.ts).
@@ -14,7 +15,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-FROM node:22.11.0-alpine AS run
+FROM node:22.16.0-alpine AS run
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 RUN addgroup -S app && adduser -S app -G app

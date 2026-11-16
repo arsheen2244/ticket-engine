@@ -115,7 +115,7 @@ Compose starts Postgres, Redis, Kafka, the backend (async Kafka mode) and the fr
 
 ## Local development
 
-Requirements: Java 21, Maven, Node 20+, and Postgres + Redis (Docker, or native installs such as PostgreSQL and Memurai on Windows).
+Requirements: Java 21, Maven, Node 20.19+ or 22.12+, and Postgres + Redis (Docker, or native installs such as PostgreSQL and Memurai on Windows).
 
 ```bash
 docker compose up -d postgres redis kafka      # infrastructure only
