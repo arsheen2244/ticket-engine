@@ -1,4 +1,10 @@
-# Flash-Sale Ticket Booking Engine
+<div align="center">
+
+# 🎟️ Flash‑Sale Ticket Booking Engine
+
+**2,000 users race for 1,000 tickets. Exactly 1,000 are sold, with zero double bookings.**
+
+</div>
 
 [![CI](https://github.com/arsheen2244/ticket-engine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/arsheen2244/ticket-engine/actions/workflows/ci.yml)
 ![Java 21](https://img.shields.io/badge/Java-21-ED8B00?logo=openjdk&logoColor=white)
@@ -18,7 +24,19 @@ A full-stack flash-sale app that sells a limited number of tickets to thousands 
 - **Backend:** a Spring Boot API with five reservation strategies behind one endpoint, from a deliberately broken baseline to an async Kafka pipeline, so you can benchmark them against each other.
 - **Frontend (FlashTix):** a Next.js app on top of it. Users sign up, watch the remaining-ticket count change live, and book safely against double clicks. Admins create sales and watch them sell.
 
-**Stack:** Java 21, Spring Boot 3, Spring Security (JWT), PostgreSQL, Redis (Lua), Kafka, Flyway, Server-Sent Events · Next.js 15 (App Router), TypeScript, Tailwind CSS · JUnit 5, Vitest, Testing Library, MSW, k6 · Docker Compose, GitHub Actions.
+### 🧰 Tech stack
+
+| Layer | Technology |
+|------|-----------|
+| Backend | Java 21, Spring Boot 3 (Web, JDBC, Validation, Actuator), Spring Security OAuth2 resource server (JWT, roles) |
+| Data | PostgreSQL + Flyway migrations, row‑level locking / optimistic versioning |
+| Concurrency gate | Redis with an atomic Lua script for stock decrements |
+| Async pipeline | Apache Kafka with a transactional outbox, idempotent consumers and a dead‑letter topic |
+| Realtime | Server‑Sent Events for live stock counts |
+| Frontend (FlashTix) | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS 4 |
+| Testing | JUnit 5 concurrency tests, Spring Kafka Test, Vitest, Testing Library, MSW, k6 load tests |
+| Observability | Micrometer + Prometheus, Actuator health |
+| Delivery | Docker Compose, GitHub Actions CI, Render (API), Vercel (web) |
 
 ## Screenshots
 
